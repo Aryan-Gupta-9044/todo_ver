@@ -155,6 +155,9 @@
             app = initializeApp(firebaseConfig);
             db = getFirestore(app);
             auth = getAuth(app);
+            
+            // Check if we are in mock mode immediately after config determination
+            const isMockMode = firebaseConfig.apiKey === 'dummy-key'; 
 
             // Authentication Listener
             onAuthStateChanged(auth, async (user) => {
@@ -162,6 +165,7 @@
                 const addButton = document.getElementById('addButton');
 
                 if (user) {
+                    // Success with real user (or anonymous user)
                     userId = user.uid;
                     authStatusEl.innerHTML = `Signed in. User ID: <span class="font-mono text-xs break-all">${userId}</span>`;
                     addButton.disabled = false;
@@ -169,7 +173,19 @@
                     // Start listening to tasks only after successful sign-in
                     setupRealtimeListener(); 
                 } else {
-                    // Sign-in automatically if no user is found
+                    if (isMockMode) {
+                        // Handle Mock Mode: bypass real auth, set dummy ID, enable button.
+                        // We use a dummy user ID so the app structure can still access 'userId'.
+                        userId = 'mock-user-' + Math.random().toString(36).substring(2, 9);
+                        authStatusEl.innerHTML = `<span class="text-red-500 font-bold">Signed in (MOCK MODE)</span>. User ID: <span class="font-mono text-xs break-all">${userId}</span>`;
+                        document.getElementById('loadingMessage').textContent = "Running in MOCK MODE. Data will NOT save to the database.";
+                        addButton.disabled = false;
+                        isAuthReady = true;
+                        renderTasks([]); // Clear loading message and show empty list message
+                        return; // Exit listener
+                    }
+                    
+                    // Handle Real Auth Attempt
                     try {
                         if (initialAuthToken) {
                             await signInWithCustomToken(auth, initialAuthToken);
@@ -179,7 +195,8 @@
                         }
                     } catch (error) {
                         console.error("Authentication error:", error);
-                        authStatusEl.textContent = "Authentication Failed.";
+                        // Provide more helpful message on authentication failure
+                        authStatusEl.textContent = "Authentication Failed. Ensure Firebase Auth is enabled and credentials are valid.";
                         addButton.disabled = true;
                     }
                 }
@@ -187,7 +204,6 @@
 
         } catch (error) {
             console.error("Firebase Initialization Error:", error);
-            // This error will only show if the REAL config failed initialization (or the mock config failed, which is unlikely)
             document.getElementById('authStatus').textContent = "Firebase initialization failed. Check config.";
         }
 
@@ -218,6 +234,17 @@
                 console.warn("Auth not ready, cannot add task.");
                 return;
             }
+            
+            // If in mock mode, we simulate the addition without touching Firestore
+            if (firebaseConfig.apiKey === 'dummy-key') {
+                console.warn("MOCK MODE: Not saving to database.");
+                // Since there is no database, we cannot maintain state, so we just clear the input.
+                // In a true mock, we'd use local storage or an in-memory array, but for this context, 
+                // we focus on enabling the button.
+                taskInput.value = '';
+                return;
+            }
+
 
             const todoRef = getTodoCollectionRef();
             if (!todoRef) {
@@ -243,6 +270,12 @@
                 console.warn("Auth not ready, cannot toggle task.");
                 return;
             }
+            
+            if (firebaseConfig.apiKey === 'dummy-key') {
+                console.warn("MOCK MODE: Not updating database.");
+                return;
+            }
+
             const todoRef = getTodoCollectionRef();
             if (!todoRef) {
                  console.error("Cannot toggle task: Database reference is unavailable.");
@@ -264,6 +297,12 @@
                 console.warn("Auth not ready, cannot delete task.");
                 return;
             }
+            
+            if (firebaseConfig.apiKey === 'dummy-key') {
+                console.warn("MOCK MODE: Not deleting from database.");
+                return;
+            }
+
             const todoRef = getTodoCollectionRef();
             if (!todoRef) {
                  console.error("Cannot delete task: Database reference is unavailable.");
