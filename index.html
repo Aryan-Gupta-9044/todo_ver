@@ -60,33 +60,83 @@
         <h1 class="text-3xl font-extrabold text-gray-900 mb-2 text-center">
             🚀 My Vercel/Render To-Do
         </h1>
-        <p id="authStatus" class="text-xs text-primary mb-6 text-center">Loading authentication...</p>
         
-        <!-- Input Form for New Tasks -->
-        <div class="flex space-x-2 mb-8">
+        <!-- === AUTHENTICATION CONTAINER === -->
+        <div id="authContainer" class="space-y-4">
+            <p class="text-sm text-center text-gray-600 mb-4">Log in or register to save your list.</p>
+
             <input 
-                type="text" 
-                id="taskInput" 
-                placeholder="What needs to be done?"
-                class="flex-grow p-3 border border-gray-300 rounded-lg focus:ring-secondary focus:border-secondary transition duration-150"
-                maxlength="100"
+                type="email" 
+                id="authEmail" 
+                placeholder="Email Address"
+                class="w-full p-3 border border-gray-300 rounded-lg focus:ring-secondary focus:border-secondary transition duration-150"
             >
-            <button 
-                id="addButton"
-                onclick="addTask()"
-                class="bg-primary hover:bg-secondary text-white font-semibold py-3 px-4 rounded-lg shadow-md transition duration-200 disabled:opacity-50"
-                disabled
+            <input 
+                type="password" 
+                id="authPassword" 
+                placeholder="Password"
+                class="w-full p-3 border border-gray-300 rounded-lg focus:ring-secondary focus:border-secondary transition duration-150"
             >
-                Add
-            </button>
+
+            <div class="flex space-x-2">
+                <button 
+                    id="loginButton"
+                    onclick="loginUser()"
+                    class="w-1/2 bg-primary hover:bg-secondary text-white font-semibold py-3 px-4 rounded-lg shadow-md transition duration-200"
+                >
+                    Log In
+                </button>
+                <button 
+                    id="registerButton"
+                    onclick="registerUser()"
+                    class="w-1/2 bg-gray-500 hover:bg-gray-600 text-white font-semibold py-3 px-4 rounded-lg shadow-md transition duration-200"
+                >
+                    Register
+                </button>
+            </div>
+            
+            <p id="authError" class="text-sm text-center text-red-500 pt-2"></p>
         </div>
 
-        <!-- Task List Container -->
-        <div id="taskList" class="space-y-3">
-            <!-- Tasks will be rendered here by JavaScript -->
-            <p class="text-gray-500 text-center py-4" id="loadingMessage">
-                Loading tasks...
-            </p>
+        <!-- === TO-DO LIST CONTAINER === -->
+        <div id="todoContainer" class="hidden">
+            
+            <!-- Auth Status and Logout Button -->
+            <div class="flex justify-between items-center mb-6 border-b pb-4 border-gray-100">
+                <p id="authStatus" class="text-xs font-medium text-gray-700">Signed in.</p>
+                <button 
+                    onclick="logoutUser()" 
+                    class="text-sm text-gray-500 hover:text-red-500 font-medium transition duration-150 p-2 rounded-lg"
+                >
+                    Logout
+                </button>
+            </div>
+
+            <!-- Input Form for New Tasks -->
+            <div class="flex space-x-2 mb-8">
+                <input 
+                    type="text" 
+                    id="taskInput" 
+                    placeholder="What needs to be done?"
+                    class="flex-grow p-3 border border-gray-300 rounded-lg focus:ring-secondary focus:border-secondary transition duration-150"
+                    maxlength="100"
+                >
+                <button 
+                    id="addButton"
+                    onclick="addTask()"
+                    class="bg-primary hover:bg-secondary text-white font-semibold py-3 px-4 rounded-lg shadow-md transition duration-200 disabled:opacity-50"
+                >
+                    Add
+                </button>
+            </div>
+
+            <!-- Task List Container -->
+            <div id="taskList" class="space-y-3">
+                <!-- Tasks will be rendered here by JavaScript -->
+                <p class="text-gray-500 text-center py-4" id="loadingMessage">
+                    Loading tasks...
+                </p>
+            </div>
         </div>
         
     </div>
@@ -96,9 +146,11 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { 
             getAuth, 
-            signInAnonymously, 
             signInWithCustomToken, 
-            onAuthStateChanged 
+            onAuthStateChanged, 
+            signOut,
+            createUserWithEmailAndPassword,
+            signInWithEmailAndPassword
         } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { 
             getFirestore, 
@@ -115,33 +167,23 @@
         // --- GLOBAL FIREBASE/AUTH/APP ID VARIABLES (MANDATORY) ---
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         
-        // In-memory array to hold tasks when database connection is unavailable (Mock Mode)
-        let mockTasks = []; 
-
         let firebaseConfig;
+        let isOfflineMode = false;
+
         try {
-            // Attempt to parse the injected config
             const injectedConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
             
-            // Check if the provided configuration is empty. If so, use a harmless mock config 
-            // to prevent the application from crashing on initialization.
-            if (Object.keys(injectedConfig).length === 0) {
-                console.warn("Using mock Firebase configuration as injected config is empty. Database functions will fail.");
-                firebaseConfig = { 
-                    apiKey: "dummy-key", 
-                    authDomain: "dummy.firebaseapp.com", 
-                    projectId: "dummy-project" 
-                };
+            if (Object.keys(injectedConfig).length === 0 || !injectedConfig.projectId || injectedConfig.projectId === 'dummy-project') {
+                isOfflineMode = true;
+                console.warn("Firebase configuration is missing or invalid. Running in OFFLINE UI Mode.");
+                firebaseConfig = { apiKey: "dummy-key", authDomain: "dummy.firebaseapp.com", projectId: "dummy-project" };
             } else {
                 firebaseConfig = injectedConfig;
             }
         } catch (e) {
-            console.error("Failed to parse __firebase_config. Using mock config.", e);
-            firebaseConfig = { 
-                apiKey: "dummy-key", 
-                authDomain: "dummy.firebaseapp.com", 
-                projectId: "dummy-project" 
-            };
+            console.error("Failed to parse __firebase_config. Switching to OFFLINE UI Mode.", e);
+            isOfflineMode = true;
+            firebaseConfig = { apiKey: "dummy-key", authDomain: "dummy.firebaseapp.com", projectId: "dummy-project" };
         }
         
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
@@ -152,76 +194,135 @@
 
         setLogLevel('Debug'); // Enable Firestore logging
 
+        // --- Helper for UI State Management ---
+        function setUIState(isAuthenticated, userEmail = null) {
+            const authContainer = document.getElementById('authContainer');
+            const todoContainer = document.getElementById('todoContainer');
+            const statusEl = document.getElementById('authStatus');
+            const authErrorEl = document.getElementById('authError');
+            
+            authErrorEl.textContent = ''; // Clear previous errors
+
+            if (isAuthenticated) {
+                authContainer.classList.add('hidden');
+                todoContainer.classList.remove('hidden');
+                statusEl.textContent = `Signed in as: ${userEmail || 'User'}`;
+            } else {
+                todoContainer.classList.add('hidden');
+                authContainer.classList.remove('hidden');
+                statusEl.textContent = ''; // Cleared on auth page
+                
+                if (isOfflineMode) {
+                     authErrorEl.textContent = "Authentication is OFFLINE. Cannot log in or save data.";
+                }
+            }
+        }
+
+        // --- Authentication Functions ---
+        window.registerUser = async function() {
+            if (isOfflineMode) return document.getElementById('authError').textContent = "Cannot register: Firebase is offline.";
+            
+            const email = document.getElementById('authEmail').value.trim();
+            const password = document.getElementById('authPassword').value.trim();
+            const errorEl = document.getElementById('authError');
+            errorEl.textContent = '';
+
+            try {
+                await createUserWithEmailAndPassword(auth, email, password);
+                // Auth listener handles the state change on successful registration
+            } catch (error) {
+                console.error("Registration error:", error);
+                errorEl.textContent = error.message.includes('weak-password') ? "Password must be at least 6 characters." : error.message;
+            }
+        };
+
+        window.loginUser = async function() {
+            if (isOfflineMode) return document.getElementById('authError').textContent = "Cannot log in: Firebase is offline.";
+
+            const email = document.getElementById('authEmail').value.trim();
+            const password = document.getElementById('authPassword').value.trim();
+            const errorEl = document.getElementById('authError');
+            errorEl.textContent = '';
+
+            try {
+                await signInWithEmailAndPassword(auth, email, password);
+                // Auth listener handles the state change on successful login
+            } catch (error) {
+                console.error("Login error:", error);
+                errorEl.textContent = "Login failed. Check email and password.";
+            }
+        };
+
+        window.logoutUser = async function() {
+            if (isOfflineMode) {
+                // If offline, just reset UI state as if logged out, although no real auth occurred.
+                userId = null;
+                isAuthReady = false;
+                setUIState(false);
+                document.getElementById('taskInput').value = '';
+                document.getElementById('taskList').innerHTML = `<p class="text-gray-500 text-center py-4">Please log in to see your list.</p>`;
+                return;
+            }
+            
+            try {
+                await signOut(auth);
+                // Auth listener handles the state change
+            } catch (error) {
+                console.error("Logout error:", error);
+            }
+        };
+
         // --- 1. FIREBASE INITIALIZATION AND AUTHENTICATION ---
         try {
-            // This will now use either the real config or the mock config
             app = initializeApp(firebaseConfig);
             db = getFirestore(app);
             auth = getAuth(app);
             
-            // Check if we are in mock mode immediately after config determination
-            const isMockMode = firebaseConfig.apiKey === 'dummy-key'; 
-
             // Authentication Listener
             onAuthStateChanged(auth, async (user) => {
-                const authStatusEl = document.getElementById('authStatus');
-                const addButton = document.getElementById('addButton');
+                isAuthReady = true;
 
                 if (user) {
-                    // Success with real user (or anonymous user)
+                    // Logged In
                     userId = user.uid;
-                    authStatusEl.innerHTML = `Signed in. User ID: <span class="font-mono text-xs break-all">${userId}</span>`;
-                    addButton.disabled = false;
-                    isAuthReady = true;
-                    // Start listening to tasks only after successful sign-in
+                    setUIState(true, user.email);
                     setupRealtimeListener(); 
                 } else {
-                    if (isMockMode) {
-                        // Handle Mock Mode: bypass real auth, set dummy ID, enable button.
-                        userId = 'mock-user-' + Math.random().toString(36).substring(2, 9);
-                        authStatusEl.innerHTML = `<span class="text-red-500 font-bold">Signed in (MOCK MODE)</span>. User ID: <span class="font-mono text-xs break-all">${userId}</span>`;
-                        
-                        addButton.disabled = false;
-                        isAuthReady = true;
-                        
-                        setupRealtimeListener(); // This will trigger the Mock Mode logic inside
-                        return; // Exit listener
-                    }
+                    // Logged Out or Initial Load
+                    userId = null;
+                    document.getElementById('authEmail').value = '';
+                    document.getElementById('authPassword').value = '';
                     
-                    // Handle Real Auth Attempt
-                    try {
-                        if (initialAuthToken) {
+                    if (initialAuthToken && !isOfflineMode) {
+                        // Attempt silent sign-in with custom token if available
+                         try {
                             await signInWithCustomToken(auth, initialAuthToken);
-                        } else {
-                            // Fallback to anonymous sign-in if no custom token is available
-                            await signInAnonymously(auth);
+                        } catch (error) {
+                            // If custom token fails, show login form
+                            console.error("Custom token sign-in failed:", error);
+                            setUIState(false);
                         }
-                    } catch (error) {
-                        console.error("Authentication error:", error);
-                        // Provide more helpful message on authentication failure
-                        authStatusEl.textContent = "Authentication Failed. Ensure Firebase Auth is enabled and credentials are valid.";
-                        addButton.disabled = true;
+                    } else {
+                         // If no user, no token, or offline mode, show login form
+                         setUIState(false);
                     }
                 }
             });
 
         } catch (error) {
             console.error("Firebase Initialization Error:", error);
-            document.getElementById('authStatus').textContent = "Firebase initialization failed. Check config.";
+            document.getElementById('authError').textContent = "Initialization failed. Check console for config errors.";
+            setUIState(false); // Ensure Auth UI is shown on failure
         }
 
 
         // --- 2. FIRESTORE COLLECTION REFERENCE HELPER ---
 
-        /**
-         * Generates the collection reference for the user's private todo list.
-         */
         function getTodoCollectionRef() {
             if (!db || !userId) {
-                console.error("Firestore or User ID is not available in real mode.");
+                console.error("Firestore or User ID is not available.");
                 return null;
             }
-            // Private data path: /artifacts/{appId}/users/{userId}/todos
             const collectionPath = `artifacts/${appId}/users/${userId}/todos`;
             return collection(db, collectionPath);
         }
@@ -229,31 +330,12 @@
         // --- 3. CRUD OPERATIONS ---
 
         window.addTask = async function() {
+            if (!isAuthReady || isOfflineMode || !userId) return;
+
             const taskInput = document.getElementById('taskInput');
             const description = taskInput.value.trim();
 
             if (!description) return;
-            if (!isAuthReady) {
-                console.warn("Auth not ready, cannot add task.");
-                return;
-            }
-            
-            // Handle Mock Mode: Update local array and re-render
-            if (firebaseConfig.apiKey === 'dummy-key') {
-                const newTask = {
-                    id: 'mock-' + Date.now(),
-                    description: description,
-                    completed: false,
-                    createdAt: Date.now()
-                };
-                mockTasks.push(newTask);
-                taskInput.value = '';
-                // Client-side sorting before rendering
-                mockTasks.sort((a, b) => b.createdAt - a.createdAt);
-                renderTasks(mockTasks); 
-                return;
-            }
-
 
             const todoRef = getTodoCollectionRef();
             if (!todoRef) {
@@ -267,28 +349,14 @@
                     completed: false,
                     createdAt: Date.now()
                 });
-                taskInput.value = ''; // Clear input on success
+                taskInput.value = ''; 
             } catch (e) {
                 console.error("Error adding document: ", e);
-                // In a real app, show a friendly error message here
             }
         };
 
         window.toggleTask = async function(docId, currentStatus) {
-            if (!isAuthReady) {
-                console.warn("Auth not ready, cannot toggle task.");
-                return;
-            }
-            
-            // Handle Mock Mode: Update local array and re-render
-            if (firebaseConfig.apiKey === 'dummy-key') {
-                const task = mockTasks.find(t => t.id === docId);
-                if (task) {
-                    task.completed = !currentStatus;
-                    renderTasks(mockTasks); 
-                }
-                return;
-            }
+            if (!isAuthReady || isOfflineMode || !userId) return;
 
             const todoRef = getTodoCollectionRef();
             if (!todoRef) {
@@ -307,17 +375,7 @@
         };
 
         window.deleteTask = async function(docId) {
-            if (!isAuthReady) {
-                console.warn("Auth not ready, cannot delete task.");
-                return;
-            }
-            
-            // Handle Mock Mode: Update local array and re-render
-            if (firebaseConfig.apiKey === 'dummy-key') {
-                mockTasks = mockTasks.filter(t => t.id !== docId);
-                renderTasks(mockTasks);
-                return;
-            }
+            if (!isAuthReady || isOfflineMode || !userId) return;
 
             const todoRef = getTodoCollectionRef();
             if (!todoRef) {
@@ -337,36 +395,31 @@
         // --- 4. REAL-TIME LISTENER & RENDERING ---
 
         function setupRealtimeListener() {
-            const isMockMode = firebaseConfig.apiKey === 'dummy-key'; 
-            const loadingMessageEl = document.getElementById('loadingMessage');
+            if (isOfflineMode) {
+                document.getElementById('loadingMessage').textContent = "Database connection is OFFLINE. Please check Firebase configuration.";
+                return;
+            }
 
-            if (isMockMode) {
-                loadingMessageEl.textContent = "Running in MOCK MODE (In-Memory). Data will NOT save to the database.";
-                renderTasks(mockTasks); // Initial render using the empty mock array
+            const todoRef = getTodoCollectionRef();
+            if (!todoRef) {
+                document.getElementById('loadingMessage').textContent = "Not authorized to load list.";
                 return;
             }
             
-            const todoRef = getTodoCollectionRef();
-            if (!todoRef) return;
-            
-            // Note: We avoid using orderBy() and will sort client-side to prevent index issues.
             const q = query(todoRef); 
 
-            // onSnapshot sets up the real-time listener
             onSnapshot(q, (snapshot) => {
                 const tasks = [];
                 snapshot.forEach((doc) => {
                     tasks.push({ id: doc.id, ...doc.data() });
                 });
 
-                // Client-side sorting by creation date (newest first)
                 tasks.sort((a, b) => b.createdAt - a.createdAt);
                 
                 renderTasks(tasks);
             }, (error) => {
                 console.error("Error listening to collection: ", error);
-                // If the listener fails (likely due to invalid credentials)
-                document.getElementById('loadingMessage').textContent = "Database connection offline. Tasks cannot be loaded or saved.";
+                document.getElementById('loadingMessage').textContent = "Error loading tasks. Check security rules and connection.";
             });
         }
 
@@ -375,7 +428,7 @@
          */
         function renderTasks(tasks) {
             const taskListEl = document.getElementById('taskList');
-            taskListEl.innerHTML = ''; // Clear existing list
+            taskListEl.innerHTML = ''; 
 
             if (tasks.length === 0) {
                 taskListEl.innerHTML = `<p class="text-gray-500 text-center py-4">You're all done! Add a new task above.</p>`;
