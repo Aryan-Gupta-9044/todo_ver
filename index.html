@@ -114,7 +114,33 @@
 
         // --- GLOBAL FIREBASE/AUTH/APP ID VARIABLES (MANDATORY) ---
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        
+        let firebaseConfig;
+        try {
+            // Attempt to parse the injected config
+            const injectedConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+            
+            // Check if the provided configuration is empty. If so, use a harmless mock config 
+            // to prevent the application from crashing on initialization.
+            if (Object.keys(injectedConfig).length === 0) {
+                console.warn("Using mock Firebase configuration as injected config is empty. Database functions will fail.");
+                firebaseConfig = { 
+                    apiKey: "dummy-key", 
+                    authDomain: "dummy.firebaseapp.com", 
+                    projectId: "dummy-project" 
+                };
+            } else {
+                firebaseConfig = injectedConfig;
+            }
+        } catch (e) {
+            console.error("Failed to parse __firebase_config. Using mock config.", e);
+            firebaseConfig = { 
+                apiKey: "dummy-key", 
+                authDomain: "dummy.firebaseapp.com", 
+                projectId: "dummy-project" 
+            };
+        }
+        
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
         let app, db, auth;
@@ -125,6 +151,7 @@
 
         // --- 1. FIREBASE INITIALIZATION AND AUTHENTICATION ---
         try {
+            // This will now use either the real config or the mock config
             app = initializeApp(firebaseConfig);
             db = getFirestore(app);
             auth = getAuth(app);
@@ -160,6 +187,7 @@
 
         } catch (error) {
             console.error("Firebase Initialization Error:", error);
+            // This error will only show if the REAL config failed initialization (or the mock config failed, which is unlikely)
             document.getElementById('authStatus').textContent = "Firebase initialization failed. Check config.";
         }
 
@@ -192,7 +220,10 @@
             }
 
             const todoRef = getTodoCollectionRef();
-            if (!todoRef) return;
+            if (!todoRef) {
+                 console.error("Cannot add task: Database reference is unavailable.");
+                 return;
+            }
 
             try {
                 await addDoc(todoRef, {
@@ -213,7 +244,10 @@
                 return;
             }
             const todoRef = getTodoCollectionRef();
-            if (!todoRef) return;
+            if (!todoRef) {
+                 console.error("Cannot toggle task: Database reference is unavailable.");
+                 return;
+            }
 
             try {
                 const taskDocRef = doc(todoRef, docId);
@@ -231,7 +265,10 @@
                 return;
             }
             const todoRef = getTodoCollectionRef();
-            if (!todoRef) return;
+            if (!todoRef) {
+                 console.error("Cannot delete task: Database reference is unavailable.");
+                 return;
+            }
 
             try {
                 const taskDocRef = doc(todoRef, docId);
@@ -264,7 +301,8 @@
                 renderTasks(tasks);
             }, (error) => {
                 console.error("Error listening to collection: ", error);
-                document.getElementById('loadingMessage').textContent = "Failed to load tasks.";
+                // If the listener fails (likely due to mock config or invalid credentials)
+                document.getElementById('loadingMessage').textContent = "Database connection offline. Tasks cannot be loaded or saved.";
             });
         }
 
