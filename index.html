@@ -167,24 +167,20 @@
         // --- GLOBAL FIREBASE/AUTH/APP ID VARIABLES (MANDATORY) ---
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         
-        let firebaseConfig;
-        let isOfflineMode = false;
-
-        try {
-            const injectedConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-            
-            if (Object.keys(injectedConfig).length === 0 || !injectedConfig.projectId || injectedConfig.projectId === 'dummy-project') {
-                isOfflineMode = true;
-                console.warn("Firebase configuration is missing or invalid. Running in OFFLINE UI Mode.");
-                firebaseConfig = { apiKey: "dummy-key", authDomain: "dummy.firebaseapp.com", projectId: "dummy-project" };
-            } else {
-                firebaseConfig = injectedConfig;
-            }
-        } catch (e) {
-            console.error("Failed to parse __firebase_config. Switching to OFFLINE UI Mode.", e);
-            isOfflineMode = true;
-            firebaseConfig = { apiKey: "dummy-key", authDomain: "dummy.firebaseapp.com", projectId: "dummy-project" };
-        }
+        // Using the hardcoded configuration provided by the user. 
+        // This bypasses checking the environment variable __firebase_config 
+        // and enables the app to connect to the live database immediately.
+        const firebaseConfig = {
+            apiKey: "AIzaSyDFDwZZKeuo7K2HVRC8IIsVn1ccQtlnsoc",
+            authDomain: "todo-356ba.firebaseapp.com",
+            projectId: "todo-356ba",
+            storageBucket: "todo-356ba.firebasestorage.app",
+            messagingSenderId: "49815042971",
+            appId: "1:49815042971:web:cc5895115cbf5b18d6bf3e",
+        };
+        
+        // Since the configuration is now valid, we disable the Offline UI Mode flag.
+        let isOfflineMode = false; 
         
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
@@ -255,7 +251,7 @@
 
         window.logoutUser = async function() {
             if (isOfflineMode) {
-                // If offline, just reset UI state as if logged out, although no real auth occurred.
+                // Should not happen as we are in Live Mode now, but kept for robustness.
                 userId = null;
                 isAuthReady = false;
                 setUIState(false);
@@ -330,7 +326,8 @@
         // --- 3. CRUD OPERATIONS ---
 
         window.addTask = async function() {
-            if (!isAuthReady || isOfflineMode || !userId) return;
+            // isOfflineMode is now false, so this will proceed to Firebase
+            if (!isAuthReady || !userId) return;
 
             const taskInput = document.getElementById('taskInput');
             const description = taskInput.value.trim();
@@ -356,7 +353,7 @@
         };
 
         window.toggleTask = async function(docId, currentStatus) {
-            if (!isAuthReady || isOfflineMode || !userId) return;
+            if (!isAuthReady || !userId) return;
 
             const todoRef = getTodoCollectionRef();
             if (!todoRef) {
@@ -375,7 +372,7 @@
         };
 
         window.deleteTask = async function(docId) {
-            if (!isAuthReady || isOfflineMode || !userId) return;
+            if (!isAuthReady || !userId) return;
 
             const todoRef = getTodoCollectionRef();
             if (!todoRef) {
@@ -395,6 +392,7 @@
         // --- 4. REAL-TIME LISTENER & RENDERING ---
 
         function setupRealtimeListener() {
+            // isOfflineMode is false, so this will proceed to real database
             if (isOfflineMode) {
                 document.getElementById('loadingMessage').textContent = "Database connection is OFFLINE. Please check Firebase configuration.";
                 return;
