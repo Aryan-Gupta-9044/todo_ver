@@ -115,6 +115,9 @@
         // --- GLOBAL FIREBASE/AUTH/APP ID VARIABLES (MANDATORY) ---
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         
+        // In-memory array to hold tasks when database connection is unavailable (Mock Mode)
+        let mockTasks = []; 
+
         let firebaseConfig;
         try {
             // Attempt to parse the injected config
@@ -175,13 +178,13 @@
                 } else {
                     if (isMockMode) {
                         // Handle Mock Mode: bypass real auth, set dummy ID, enable button.
-                        // We use a dummy user ID so the app structure can still access 'userId'.
                         userId = 'mock-user-' + Math.random().toString(36).substring(2, 9);
                         authStatusEl.innerHTML = `<span class="text-red-500 font-bold">Signed in (MOCK MODE)</span>. User ID: <span class="font-mono text-xs break-all">${userId}</span>`;
-                        document.getElementById('loadingMessage').textContent = "Running in MOCK MODE. Data will NOT save to the database.";
+                        
                         addButton.disabled = false;
                         isAuthReady = true;
-                        renderTasks([]); // Clear loading message and show empty list message
+                        
+                        setupRealtimeListener(); // This will trigger the Mock Mode logic inside
                         return; // Exit listener
                     }
                     
@@ -215,7 +218,7 @@
          */
         function getTodoCollectionRef() {
             if (!db || !userId) {
-                console.error("Firestore or User ID is not available.");
+                console.error("Firestore or User ID is not available in real mode.");
                 return null;
             }
             // Private data path: /artifacts/{appId}/users/{userId}/todos
@@ -235,13 +238,19 @@
                 return;
             }
             
-            // If in mock mode, we simulate the addition without touching Firestore
+            // Handle Mock Mode: Update local array and re-render
             if (firebaseConfig.apiKey === 'dummy-key') {
-                console.warn("MOCK MODE: Not saving to database.");
-                // Since there is no database, we cannot maintain state, so we just clear the input.
-                // In a true mock, we'd use local storage or an in-memory array, but for this context, 
-                // we focus on enabling the button.
+                const newTask = {
+                    id: 'mock-' + Date.now(),
+                    description: description,
+                    completed: false,
+                    createdAt: Date.now()
+                };
+                mockTasks.push(newTask);
                 taskInput.value = '';
+                // Client-side sorting before rendering
+                mockTasks.sort((a, b) => b.createdAt - a.createdAt);
+                renderTasks(mockTasks); 
                 return;
             }
 
@@ -271,8 +280,13 @@
                 return;
             }
             
+            // Handle Mock Mode: Update local array and re-render
             if (firebaseConfig.apiKey === 'dummy-key') {
-                console.warn("MOCK MODE: Not updating database.");
+                const task = mockTasks.find(t => t.id === docId);
+                if (task) {
+                    task.completed = !currentStatus;
+                    renderTasks(mockTasks); 
+                }
                 return;
             }
 
@@ -298,8 +312,10 @@
                 return;
             }
             
+            // Handle Mock Mode: Update local array and re-render
             if (firebaseConfig.apiKey === 'dummy-key') {
-                console.warn("MOCK MODE: Not deleting from database.");
+                mockTasks = mockTasks.filter(t => t.id !== docId);
+                renderTasks(mockTasks);
                 return;
             }
 
@@ -321,6 +337,15 @@
         // --- 4. REAL-TIME LISTENER & RENDERING ---
 
         function setupRealtimeListener() {
+            const isMockMode = firebaseConfig.apiKey === 'dummy-key'; 
+            const loadingMessageEl = document.getElementById('loadingMessage');
+
+            if (isMockMode) {
+                loadingMessageEl.textContent = "Running in MOCK MODE (In-Memory). Data will NOT save to the database.";
+                renderTasks(mockTasks); // Initial render using the empty mock array
+                return;
+            }
+            
             const todoRef = getTodoCollectionRef();
             if (!todoRef) return;
             
@@ -340,7 +365,7 @@
                 renderTasks(tasks);
             }, (error) => {
                 console.error("Error listening to collection: ", error);
-                // If the listener fails (likely due to mock config or invalid credentials)
+                // If the listener fails (likely due to invalid credentials)
                 document.getElementById('loadingMessage').textContent = "Database connection offline. Tasks cannot be loaded or saved.";
             });
         }
